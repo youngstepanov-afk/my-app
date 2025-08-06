@@ -1,36 +1,77 @@
-# This workflow will run tests using node and then publish a package to GitHub Packages when a release is created
-# For more information see: https://docs.github.com/en/actions/publishing-packages/publishing-nodejs-packages
-
-name: Node.js Package
+name: Netlify Deploy with Versioning
 
 on:
-  release:
-    types: [created]
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
+  version-update:
+    runs-on: ubuntu-latest
+    outputs:
+      new-version: ${{ steps.version.outputs.new-version }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      
+      - name: Update version
+        id: version
+        run: |
+          npm install
+          NEW_VERSION=$(node version-updater.js)
+          echo "new-version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add package.json
+          git commit -m "Bump version to ${NEW_VERSION} [skip ci]"
+          git push
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build:
+    needs: version-update
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm ci
-      - run: npm test
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run tests
+        run: npm test
+      
+      - name: Build project
+        run: npm run build
+        env:
+          REACT_APP_VERSION: ${{ needs.version-update.outputs.new-version }}
 
-  publish-gpr:
+  deploy:
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          registry-url: https://npm.pkg.github.com/
-      - run: npm ci
-      - run: npm publish
+      
+      - name: Install Netlify CLI
+        run: npm install -g netlify-cli
+      
+      - name: Deploy to Netlify
+        run: |
+          netlify deploy \
+            --prod \
+            --auth ${{ secrets.NETLIFY_AUTH_TOKEN }} \
+            --site ${{ secrets.NETLIFY_SITE_ID }} \
+            --dir=build
         env:
-          NODE_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}

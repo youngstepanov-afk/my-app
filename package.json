@@ -7,6 +7,7 @@
     "@testing-library/jest-dom": "^6.6.4",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^13.5.0",
+    "antd": "^5.26.7",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-scripts": "5.0.1",
@@ -14,9 +15,11 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build",
+    "eject": "react-scripts eject",
+    "version-up": "node version-updater.js",
+    "postversion": "git add package.json",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "build": "REACT_APP_VERSION=$npm_package_version react-scripts build"
   },
   "eslintConfig": {
     "extends": [
