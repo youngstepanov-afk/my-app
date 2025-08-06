@@ -1,30 +1,43 @@
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
-// Получаем текущую ветку из переменных окружения Git
-const branch = process.env.GITHUB_REF || '';
+function parseVersion(version) {
+  return version.split('.').map(Number);
+}
 
 function updateVersion(branch) {
   const pkgPath = path.join(__dirname, 'package.json');
-  const pkg = require(pkgPath);
-  let [major, minor, patch] = pkg.version.split('.').map(Number);
+  const pkg = JSON.parse(fs.readFileSync(pkgPath));
+  let [major, minor, patch] = parseVersion(pkg.version);
 
-  if (branch.includes('feature/')) {
-    major += 1;
+  // Определяем тип изменения по ветке
+  if (branch.includes('core/')) {
+    major += 1;  // MAJOR - breaking changes
     minor = 0;
     patch = 0;
-  } else if (branch.includes('fix/')) {
-    minor += 1;
+  } else if (branch.includes('feature/')) {
+    minor += 1;  // MINOR - new features
     patch = 0;
-  } else if (branch.includes('core/')) {
-    patch += 1;
+  } else if (branch.includes('fix/') || branch.includes('hotfix/')) {
+    patch += 1;  // PATCH - bug fixes
   }
 
-  pkg.version = `${major}.${minor}.${patch}`;
-  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-  
-  return pkg.version;
+  // Для релизных тегов (v1.0.0)
+  if (branch.includes('refs/tags/v')) {
+    const tagVersion = branch.split('refs/tags/v')[1];
+    [major, minor, patch] = parseVersion(tagVersion);
+  }
+
+  const newVersion = `${major}.${minor}.${patch}`;
+  pkg.version = newVersion;
+  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
+
+  return newVersion;
 }
 
+// Получаем текущую ветку из GitHub Actions или git
+const branch = process.env.GITHUB_REF || execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
 const newVersion = updateVersion(branch);
-console.log(`Version updated to: ${newVersion}`);
+
+console.log(`Updated to version: ${newVersion}`);
