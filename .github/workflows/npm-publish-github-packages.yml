@@ -1,24 +1,30 @@
-name: Netlify Deploy with Versioning
+name: Major Version Deployment
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'core/**']
   pull_request:
     branches: [main]
 
 jobs:
+  version-check:
+    runs-on: ubuntu-latest
+    outputs:
+      is-major: ${{ contains(github.ref, 'core/') }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "is-major=${{ contains(github.ref, 'core/') }}" >> $GITHUB_OUTPUT
+
   version-update:
+    needs: version-check
     runs-on: ubuntu-latest
     outputs:
       new-version: ${{ steps.version.outputs.new-version }}
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-      
       - name: Update version
         id: version
         run: |
@@ -34,44 +40,27 @@ jobs:
           GITHUB_REF: ${{ github.ref }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  build:
+  deploy:
     needs: version-update
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Run tests
-        run: npm test
-      
-      - name: Build project
-        run: npm run build
+      - run: npm ci
+      - run: npm run build
         env:
           REACT_APP_VERSION: ${{ needs.version-update.outputs.new-version }}
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install Netlify CLI
-        run: npm install -g netlify-cli
-      
-      - name: Deploy to Netlify
+          REACT_APP_UPDATE_TYPE: ${{ needs.version-check.outputs.is-major && 'major' || 'minor' }}
+      - name: Netlify Deploy
         run: |
-          netlify deploy \
-            --prod \
-            --auth ${{ secrets.NETLIFY_AUTH_TOKEN }} \
-            --site ${{ secrets.NETLIFY_SITE_ID }} \
-            --dir=build
+          npm install -g netlify-cli
+          if ${{ needs.version-check.outputs.is-major }}; then
+            netlify deploy --prod --auth $NETLIFY_TOKEN --site $NETLIFY_SITE_ID --dir=build --message "Major Release v${{ needs.version-update.outputs.new-version }}"
+          else
+            netlify deploy --prod --auth $NETLIFY_TOKEN --site $NETLIFY_SITE_ID --dir=build
+          fi
         env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
